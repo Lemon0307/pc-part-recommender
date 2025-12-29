@@ -6,7 +6,12 @@ part_management = Blueprint('part_management', __name__)
 
 valid_parts = {"cpu", "gpu", "ram", "motherboard", "storage", "power supply", "cpu cooler", "chassis", "accessories", "monitors"}
 comptatibility = {
-    "cpu": ["socket", ]
+    "cpu": ["socket", "tdp"],
+    "motherboard": ["socket", "memory_type", "form_factor", "chipset"],
+    "gpu": ["length", "tdp"],
+    "ram": ["memory_type", "capacity"],
+    "power_supply": ["wattage", "form_factor"],
+    "chassis": ["form_factor", "max_gpu_length", "max_cpu_cooler_height"]
 }
 
 @part_management.route('/add_part', methods=['POST'])
@@ -51,23 +56,23 @@ def add_part_to_build():
     build_id = data.get("build_id")
     quantity = data.get("quantity")
     
-    # checks if parts and build exist
-    check_part_exists = "MATCH (p {part_id: $part_id}) RETURN p"
-    part_result = driver.execute_query(check_part_exists, part_id=part_id)
-    check_build_exists = "MATCH (o:Build {build_id: $build_id}) RETURN o"
-    build_result = driver.execute_query(check_build_exists, build_id=build_id)  
+    # # checks if parts and build exist
+    # check_part_exists = "MATCH (p {part_id: $part_id}) RETURN p"
+    # part_result = driver.execute_query(check_part_exists, part_id=part_id)
+    # check_build_exists = "MATCH (o:Build {build_id: $build_id}) RETURN o"
+    # build_result = driver.execute_query(check_build_exists, build_id=build_id)  
 
-    if not build_result.records and not part_result.records:
-        return jsonify({"error": "Part or build does not exist"}), 404
+    # if not build_result.records and not part_result.records:
+    #     return jsonify({"error": "Part or build does not exist"}), 404
     
-    # checks if part is already in build
-    check_if_already_in_build = driver.execute_query("""
-    MATCH (o:Build {build_id: $build_id})-[r:CONTAINS]->(p {part_id: $part_id})
-    RETURN r 
-    """, build_id=build_id, part_id=part_id)
+    # # checks if part is already in build
+    # check_if_already_in_build = driver.execute_query("""
+    # MATCH (o:Build {build_id: $build_id})-[r:CONTAINS]->(p {part_id: $part_id})
+    # RETURN r 
+    # """, build_id=build_id, part_id=part_id)
 
-    if check_if_already_in_build.records:
-        return jsonify({"error": "Part already in build"}), 400
+    # if check_if_already_in_build.records:
+    #     return jsonify({"error": "Part already in build"}), 400
 
     #builds and executes query
     query = """
