@@ -20,14 +20,15 @@ def add_part():
 
     #get data from request
     data = request.json
-    part_type = next(iter(data)).upper()
+    part_type = next(iter(data))
+    properties = data[part_type]
+    part_type = part_type.upper()
     part_id = str(uuid.uuid4())
 
     # checks if part type is valid
     if part_type not in valid_parts:
         return jsonify({"error": "Invalid part type"}), 400
     
-    properties = data[part_type]
     properties['part_id'] = part_id
         
     #builds and executes query
@@ -38,11 +39,9 @@ def add_part():
     conditions_to_check_for_compatibility = ""
     for condition in compatibility[part_type]:
         conditions_to_check_for_compatibility += f"p.{condition} = n.{condition} OR "
-        print(conditions_to_check_for_compatibility)
 
     conditions_to_check_for_compatibility = conditions_to_check_for_compatibility.rstrip(" OR ")
-    check_if_compatible_with_others = f"MATCH (p:{part_type} {{part_id: $part_id}}), (n) WHERE NOT (n:Build) AND NOT (n:{part_type}) AND p <> n AND ({conditions_to_check_for_compatibility}) CREATE IF NOT EXISTS (p)-[:COMPATIBLE]->(n);"
-    print(check_if_compatible_with_others)
+    check_if_compatible_with_others = f"MATCH (p:{part_type} {{part_id: $part_id}}), (n) WHERE NOT (n:Build) AND NOT (n:{part_type}) AND p <> n AND ({conditions_to_check_for_compatibility}) MERGE (p)-[:COMPATIBLE]-(n);"
     driver.execute_query(check_if_compatible_with_others, part_id=part_id)
 
     return jsonify({"message": f"{part_type} added successfully"}), 201
@@ -67,23 +66,23 @@ def add_part_to_build():
     build_id = data.get("build_id")
     quantity = data.get("quantity")
     
-    # # checks if parts and build exist
-    # check_part_exists = "MATCH (p {part_id: $part_id}) RETURN p"
-    # part_result = driver.execute_query(check_part_exists, part_id=part_id)
-    # check_build_exists = "MATCH (o:Build {build_id: $build_id}) RETURN o"
-    # build_result = driver.execute_query(check_build_exists, build_id=build_id)  
+    # checks if parts and build exist
+    check_part_exists = f"MATCH (p {{part_id: $part_id}}) RETURN p"
+    part_result = driver.execute_query(check_part_exists, part_id=part_id)
+    check_build_exists = "MATCH (o:Build {build_id: $build_id}) RETURN o"
+    build_result = driver.execute_query(check_build_exists, build_id=build_id)  
 
-    # if not build_result.records and not part_result.records:
-    #     return jsonify({"error": "Part or build does not exist"}), 404
+    if not build_result.records and not part_result.records:
+        return jsonify({"error": "Part or build does not exist"}), 404
     
-    # # checks if part is already in build
-    # check_if_already_in_build = driver.execute_query("""
-    # MATCH (o:Build {build_id: $build_id})-[r:CONTAINS]->(p {part_id: $part_id})
-    # RETURN r 
-    # """, build_id=build_id, part_id=part_id)
+    # checks if part is already in build
+    check_if_already_in_build = driver.execute_query("""
+    MATCH (o:Build {build_id: $build_id})-[r:CONTAINS]->(p {part_id: $part_id})
+    RETURN r 
+    """, build_id=build_id, part_id=part_id)
 
-    # if check_if_already_in_build.records:
-    #     return jsonify({"error": "Part already in build"}), 400
+    if check_if_already_in_build.records:
+        return jsonify({"error": "Part already in build"}), 400
 
     #builds and executes query
     query = """
