@@ -4,14 +4,14 @@ import uuid
 
 part_management = Blueprint('part_management', __name__)
 
-valid_parts = {"cpu", "gpu", "ram", "motherboard", "storage", "power supply", "cpu cooler", "chassis", "accessories", "monitors"}
-comptatibility = {
-    "cpu": ["socket", "tdp"],
-    "motherboard": ["socket", "memory_type", "form_factor", "chipset"],
-    "gpu": ["length", "tdp"],
-    "ram": ["memory_type", "capacity"],
-    "power_supply": ["wattage", "form_factor"],
-    "chassis": ["form_factor", "max_gpu_length", "max_cpu_cooler_height"]
+valid_parts = ["CPU", "GPU", "RAM", "MOTHERBOARD", "STORAGE", "POWER SUPPLY", "CPU COOLER", "CHASSIS", "ACCESSORIES", "MONITORS"]
+compatibility = {
+    "CPU": ["socket"],
+    "MOTHERBOARD": ["socket", "memory_type", "form_factor", "chipset"],
+    "GPU": ["length"],
+    "RAM": ["memory_type", "capacity"],
+    "POWER SUPPLY": ["wattage", "form_factor"],
+    "CHASSIS": ["form_factor", "max_gpu_length", "max_cpu_cooler_height"]
 }
 
 @part_management.route('/add_part', methods=['POST'])
@@ -20,11 +20,11 @@ def add_part():
 
     #get data from request
     data = request.json
-    part_type = next(iter(data))
+    part_type = next(iter(data)).upper()
     part_id = str(uuid.uuid4())
 
     # checks if part type is valid
-    if part_type.lower() not in valid_parts:
+    if part_type not in valid_parts:
         return jsonify({"error": "Invalid part type"}), 400
     
     properties = data[part_type]
@@ -34,6 +34,17 @@ def add_part():
     query = f"CREATE (p:{part_type} $props)"
     driver.execute_query(query, props=properties)
 
+    # check for compatibility with other parts
+    conditions_to_check_for_compatibility = ""
+    for condition in compatibility[part_type]:
+        conditions_to_check_for_compatibility += f"p.{condition} = n.{condition} OR "
+        print(conditions_to_check_for_compatibility)
+
+    conditions_to_check_for_compatibility = conditions_to_check_for_compatibility.rstrip(" OR ")
+    check_if_compatible_with_others = f"MATCH (p:{part_type} {{part_id: $part_id}}), (n) WHERE NOT (n:Build) AND NOT (n:{part_type}) AND p <> n AND ({conditions_to_check_for_compatibility}) CREATE IF NOT EXISTS (p)-[:COMPATIBLE]->(n);"
+    print(check_if_compatible_with_others)
+    driver.execute_query(check_if_compatible_with_others, part_id=part_id)
+
     return jsonify({"message": f"{part_type} added successfully"}), 201
 
 @part_management.route('/create_empty_build', methods=['POST'])
@@ -41,7 +52,7 @@ def create_empty_build():
     driver = get_driver()
     build_id = str(uuid.uuid4())
 
-    query = "CREATE (o:Build {status: 'pending', created_at: datetime(), build_id: $build_id}) RETURN $build_id AS build_id"
+    query = "CREATE (o:Build {status: 'pending', created_at: datetime(), total_wattage: 0, max_wattage: 0, total_cost: 0, budget: 0, build_id: $build_id}) RETURN $build_id AS build_id"
     result = driver.execute_query(query, build_id=build_id)
 
     return jsonify({"build_id": result.records[0]["build_id"]}), 201

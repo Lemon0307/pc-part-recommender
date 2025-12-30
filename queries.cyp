@@ -22,3 +22,5 @@ CREATE
 
 MATCH (o:Order {id: 'order1'}), (c:CPU {id: 'cpu1'})
 CREATE (o)-[:INCLUDES]->(c);
+
+MATCH (p:{part_type} {part_id: $part_id}), (n) WHERE NOT (n:Build) AND NOT (n:{part_type}) RETURN FALSE
