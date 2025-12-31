@@ -1,5 +1,8 @@
 from flask import request, jsonify, Blueprint
+from flask_restful import Resource
+from neo4j.time import DateTime
 from db import get_driver
+from user_management import decode_token
 import uuid
 
 part_management = Blueprint('part_management', __name__)
@@ -14,7 +17,9 @@ compatibility = {
     "CHASSIS": ["form_factor", "max_gpu_length", "max_cpu_cooler_height"]
 }
 
-@part_management.route('/parts', methods=['POST'])
+# controller for parts (modify later with flask-restful if needed)
+
+@part_management.route('/add_part', methods=['POST'])
 def add_part():
     driver = get_driver()
 
@@ -73,7 +78,7 @@ def get_parts(part_type):
     for record in query_result.records:
         node = record['p']
         part = dict(node)
-        part["labels"] = list(node.labels)
+        part["part_type"] = list(part.labels)[0]
         parts.append(part)
 
     return jsonify({"parts": parts}), 200
@@ -94,7 +99,7 @@ def get_part_by_id(part_type, part_id):
     for record in result.records:
         node = record["p"]
         part_dict = dict(node)          
-        part_dict["labels"] = list(node.labels) 
+        part_dict["part_type"] = list(node.labels)[0]
         parts.append(part_dict)
 
     if not parts:
@@ -102,10 +107,23 @@ def get_part_by_id(part_type, part_id):
 
     return jsonify({"part": parts[0]}), 200
 
+# controller for builds (modify later with flask-restful if needed)
 
 @part_management.route('/create_empty_build', methods=['POST'])
 def create_empty_build():
     driver = get_driver()
+
+    # copy for all routes that need authentication
+
+    token = request.headers.get('Authorization')
+    token = token.split(" ")[1]
+    decoded_token = decode_token(token)
+
+    if decoded_token in ["expired", "invalid"]:
+        return jsonify({"error": "Invalid or expired token"}), 401
+    
+    # copy for all routes that need authentication
+    
     build_id = str(uuid.uuid4())
 
     query = """CREATE (o:Build {
@@ -116,16 +134,30 @@ def create_empty_build():
         max_ram_capacity: 0, 
         total_cost: 0, 
         budget: 0, 
-        build_id: $build_id}) 
-    RETURN $build_id AS build_id"""
-
-    result = driver.execute_query(query, build_id=build_id)
-
-    return jsonify({"build_id": result.records[0]["build_id"]}), 201
+        build_id: $build_id});"""
+    
+    create_relation_query = """
+        MATCH (u:User {username: $username}), (o:Build {build_id: $build_id})
+        CREATE (u)-[:OWNS]->(o)
+        """
+    driver.execute_query(query, build_id=build_id)
+    driver.execute_query(create_relation_query, build_id=build_id, username=decoded_token["username"])
+    return jsonify({"message": "Successfully created new build"}), 201
 
 @part_management.route('/add_part_to_build', methods=['POST'])
 def add_part_to_build():
     driver = get_driver()
+
+    # copy for all routes that need authentication
+
+    token = request.headers.get('Authorization')
+    token = token.split(" ")[1]
+    decoded_token = decode_token(token)
+
+    if decoded_token in ["expired", "invalid"]:
+        return jsonify({"error": "Invalid or expired token"}), 401
+    
+    # copy for all routes that need authentication
     
     #get data from request
     data = request.json
@@ -145,8 +177,10 @@ def add_part_to_build():
     # checks if part is already in build
     check_if_already_in_build = driver.execute_query("""
     MATCH (o:Build {build_id: $build_id})-[r:CONTAINS]->(p {part_id: $part_id})
+    MATCH (u:User)-[:OWNS]->(o)
+    WHERE u.username = $username
     RETURN r 
-    """, build_id=build_id, part_id=part_id)
+    """, build_id=build_id, part_id=part_id, username=decoded_token["username"])
 
     if check_if_already_in_build.records:
         return jsonify({"error": "Part already in build"}), 400
@@ -159,3 +193,56 @@ def add_part_to_build():
 
     driver.execute_query(query, part_id=part_id, build_id=build_id, quantity=quantity)
     return jsonify({"message": "Part added to build successfully"}), 200
+
+@part_management.route('/get_build/<build_id>', methods=['GET'])
+def get_build(build_id):
+    driver = get_driver()
+
+    # copy for all routes that need authentication
+
+    token = request.headers.get('Authorization')
+    token = token.split(" ")[1]
+    decoded_token = decode_token(token)
+
+    if decoded_token in ["expired", "invalid"]:
+        return jsonify({"error": "Invalid or expired token"}), 401
+    
+    # copy for all routes that need authentication
+
+    query = """
+    MATCH (u:User)-[:OWNS]->(o:Build {build_id: $build_id})
+    WHERE u.username = $username
+    OPTIONAL MATCH (o)-[r:CONTAINS]->(p)
+    RETURN o, collect({part: p, quantity: r.quantity}) AS parts
+    """
+
+    result = driver.execute_query(query, build_id=build_id, username=decoded_token["username"])
+
+    if not result.records:
+        return jsonify({"error": "Build not found"}), 404
+
+    record = result.records[0]
+
+    build_node = record["o"]
+    parts_info = record["parts"]
+
+    build_dict = dict(build_node)
+
+    for k, v in build_dict.items():
+        if isinstance(v, DateTime):
+            build_dict[k] = v.iso_format()
+    parts_list = []
+
+    for item in parts_info:
+        part_node = item["part"]
+        if part_node is not None:
+            part_dict = dict(part_node)
+            part_dict["part_type"] = list(part_node.labels)[0]
+            parts_list.append({
+                "part": part_dict,
+                "quantity": item["quantity"]
+            })
+
+    build_dict["parts"] = parts_list
+
+    return jsonify({"build": build_dict}), 200
