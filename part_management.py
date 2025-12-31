@@ -14,7 +14,7 @@ compatibility = {
     "CHASSIS": ["form_factor", "max_gpu_length", "max_cpu_cooler_height"]
 }
 
-@part_management.route('/add_part', methods=['POST'])
+@part_management.route('/parts', methods=['POST'])
 def add_part():
     driver = get_driver()
 
@@ -42,7 +42,6 @@ def add_part():
 
     case_block = ", ".join(conditions_to_check_for_compatibility)
 
-    print(case_block)
     check_if_compatible_with_others = f"""
     MATCH (p:{part_type} {{part_id: $part_id}}), (n)
     WHERE
@@ -61,9 +60,48 @@ def add_part():
     """
 
     record = driver.execute_query(check_if_compatible_with_others, part_id=part_id)
-    print(record.records)
 
     return jsonify({"message": f"{part_type} added successfully"}), 201
+
+@part_management.route('/parts/<part_type>', methods=['GET'])
+def get_parts(part_type):
+    driver = get_driver()
+    query = f"MATCH (p:{part_type}) RETURN p"
+    query_result = driver.execute_query(query)
+    
+    parts = []
+    for record in query_result.records:
+        node = record['p']
+        part = dict(node)
+        part["labels"] = list(node.labels)
+        parts.append(part)
+
+    return jsonify({"parts": parts}), 200
+
+@part_management.route('/parts/<part_type>/<part_id>', methods=['GET'])
+def get_part_by_id(part_type, part_id):
+    driver = get_driver()
+    part_type = part_type.upper()
+
+    # checks if part type is valid
+    if part_type not in valid_parts:
+        return jsonify({"error": "Invalid part type"}), 400
+
+    query = f"MATCH (p:{part_type} {{part_id: $part_id}}) RETURN p"
+    result = driver.execute_query(query, part_id=part_id)
+
+    parts = []
+    for record in result.records:
+        node = record["p"]
+        part_dict = dict(node)          
+        part_dict["labels"] = list(node.labels) 
+        parts.append(part_dict)
+
+    if not parts:
+        return jsonify({"error": "Part not found"}), 404
+
+    return jsonify({"part": parts[0]}), 200
+
 
 @part_management.route('/create_empty_build', methods=['POST'])
 def create_empty_build():
@@ -74,12 +112,13 @@ def create_empty_build():
         status: 'pending', 
         created_at: datetime(), 
         total_wattage: 0, 
-        max_wattage: 0, 
+        max_wattage: 0,
+        max_ram_capacity: 0, 
         total_cost: 0, 
         budget: 0, 
         build_id: $build_id}) 
     RETURN $build_id AS build_id"""
-    
+
     result = driver.execute_query(query, build_id=build_id)
 
     return jsonify({"build_id": result.records[0]["build_id"]}), 201
