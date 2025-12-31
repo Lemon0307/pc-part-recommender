@@ -36,13 +36,32 @@ def add_part():
     driver.execute_query(query, props=properties)
 
     # check for compatibility with other parts
-    conditions_to_check_for_compatibility = ""
+    conditions_to_check_for_compatibility = []
     for condition in compatibility[part_type]:
-        conditions_to_check_for_compatibility += f"p.{condition} = n.{condition} OR "
+        conditions_to_check_for_compatibility.append(f'CASE WHEN p.{condition} = n.{condition} THEN "{condition}" END')
 
-    conditions_to_check_for_compatibility = conditions_to_check_for_compatibility.rstrip(" OR ")
-    check_if_compatible_with_others = f"MATCH (p:{part_type} {{part_id: $part_id}}), (n) WHERE NOT (n:Build) AND NOT (n:{part_type}) AND p <> n AND ({conditions_to_check_for_compatibility}) MERGE (p)-[:COMPATIBLE]-(n);"
-    driver.execute_query(check_if_compatible_with_others, part_id=part_id)
+    case_block = ", ".join(conditions_to_check_for_compatibility)
+
+    print(case_block)
+    check_if_compatible_with_others = f"""
+    MATCH (p:{part_type} {{part_id: $part_id}}), (n)
+    WHERE
+    NOT n:Build
+    AND NOT n:{part_type}
+    AND p <> n
+    WITH
+    p, n,
+    [{case_block}] AS conditions
+    WITH
+    p, n,
+    [c IN conditions WHERE c IS NOT NULL] AS matching_conditions
+    WHERE size(matching_conditions) > 0
+    MERGE (p)-[c:COMPATIBLE]-(n)
+    SET c.compatible_on = matching_conditions
+    """
+
+    record = driver.execute_query(check_if_compatible_with_others, part_id=part_id)
+    print(record.records)
 
     return jsonify({"message": f"{part_type} added successfully"}), 201
 
@@ -92,12 +111,3 @@ def add_part_to_build():
 
     driver.execute_query(query, part_id=part_id, build_id=build_id, quantity=quantity)
     return jsonify({"message": "Part added to build successfully"}), 200
-
-# @part_management.route('/testing', methods=['POST'])
-# def testing():
-#     driver = get_driver()
-#     data = request.json
-#     part_type = next(iter(data))
-#     properties = data[part_type]
-
-#     #check if other parts have some of the same properties as this one

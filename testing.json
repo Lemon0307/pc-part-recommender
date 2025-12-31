@@ -24,5 +24,13 @@
         "pcie_slots": 3,
         "m2_slots": 4,
         "sata_ports": 6
-    }     
+    },
+    "ram": {
+        "model": "Corsair Vengeance LPX",
+        "manufacturer": "Corsair",
+        "memory_type": "DDR5",
+        "capacity": 16,
+        "speed": 3200,
+        "modules": 2
+    }
 }
