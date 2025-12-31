@@ -195,7 +195,7 @@ def add_part_to_build():
     return jsonify({"message": "Part added to build successfully"}), 200
 
 @part_management.route('/get_build/<build_id>', methods=['GET'])
-def get_build(build_id):
+def get_build_by_id(build_id):
     driver = get_driver()
 
     # copy for all routes that need authentication
@@ -246,3 +246,37 @@ def get_build(build_id):
     build_dict["parts"] = parts_list
 
     return jsonify({"build": build_dict}), 200
+
+@part_management.route("/delete_build/<build_id>", methods=['DELETE'])
+def delete_build(build_id):
+    driver = get_driver()
+
+    # copy for all routes that need authentication
+
+    token = request.headers.get('Authorization')
+    token = token.split(" ")[1]
+    decoded_token = decode_token(token)
+
+    if decoded_token in ["expired", "invalid"]:
+        return jsonify({"error": "Invalid or expired token"}), 401
+    
+    # copy for all routes that need authentication
+
+    # check if build exists and is owned by user
+    check_build_query = """
+    MATCH (u:User)-[:OWNS]->(o:Build {build_id: $build_id})
+    WHERE u.username = $username
+    RETURN o
+    """
+    result = driver.execute_query(check_build_query, build_id=build_id, username=decoded_token["username"])
+
+    if not result.records:
+        return jsonify({"error": "Build not found or not owned by user"}), 404
+
+    delete_query = """
+    MATCH (o:Build {build_id: $build_id})
+    DETACH DELETE o
+    """
+    driver.execute_query(delete_query, build_id=build_id)
+
+    return jsonify({"message": "Build deleted successfully"}), 200
