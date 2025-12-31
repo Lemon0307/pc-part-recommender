@@ -70,7 +70,16 @@ def create_empty_build():
     driver = get_driver()
     build_id = str(uuid.uuid4())
 
-    query = "CREATE (o:Build {status: 'pending', created_at: datetime(), total_wattage: 0, max_wattage: 0, total_cost: 0, budget: 0, build_id: $build_id}) RETURN $build_id AS build_id"
+    query = """CREATE (o:Build {
+        status: 'pending', 
+        created_at: datetime(), 
+        total_wattage: 0, 
+        max_wattage: 0, 
+        total_cost: 0, 
+        budget: 0, 
+        build_id: $build_id}) 
+    RETURN $build_id AS build_id"""
+    
     result = driver.execute_query(query, build_id=build_id)
 
     return jsonify({"build_id": result.records[0]["build_id"]}), 201
