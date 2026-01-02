@@ -64,7 +64,7 @@ def add_part():
     SET c.compatible_on = matching_conditions
     """
 
-    record = driver.execute_query(check_if_compatible_with_others, part_id=part_id)
+    driver.execute_query(check_if_compatible_with_others, part_id=part_id)
 
     return jsonify({"message": f"{part_type} added successfully"}), 201
 
