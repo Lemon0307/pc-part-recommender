@@ -166,12 +166,12 @@ def add_part_to_build():
     quantity = data.get("quantity")
     
     # checks if parts and build exist
-    check_part_exists = f"MATCH (p {{part_id: $part_id}}) RETURN p"
+    check_part_exists = "MATCH (p {part_id: $part_id}) RETURN p IS NOT NULL AS part_exists"
     part_result = driver.execute_query(check_part_exists, part_id=part_id)
-    check_build_exists = "MATCH (o:Build {build_id: $build_id}) RETURN o"
+    check_build_exists = "MATCH (o:Build {build_id: $build_id}) RETURN o IS NOT NULL AS build_exists"
     build_result = driver.execute_query(check_build_exists, build_id=build_id)  
 
-    if not build_result.records and not part_result.records:
+    if not build_result.records or not part_result.records:
         return jsonify({"error": "Part or build does not exist"}), 404
     
     # checks if part is already in build
@@ -193,6 +193,55 @@ def add_part_to_build():
 
     driver.execute_query(query, part_id=part_id, build_id=build_id, quantity=quantity)
     return jsonify({"message": "Part added to build successfully"}), 200
+
+@part_management.route('/get_build', methods=['GET'])
+def get_builds():
+    driver = get_driver()
+
+    # copy for all routes that need authentication
+
+    token = request.headers.get('Authorization')
+    token = token.split(" ")[1]
+    decoded_token = decode_token(token)
+
+    if decoded_token in ["expired", "invalid"]:
+        return jsonify({"error": "Invalid or expired token"}), 401
+    
+    # copy for all routes that need authentication
+
+    result = driver.execute_query("""
+    MATCH (u:User)-[:OWNS]->(o:Build)
+    WHERE u.username = $username
+    OPTIONAL MATCH (o)-[r:CONTAINS]->(p)
+    RETURN o, collect({part: p, quantity: r.quantity}) AS parts""", 
+    username=decoded_token["username"])
+
+    builds = []
+    for record in result.records:
+        build_node = record["o"]
+        parts_info = record["parts"]
+
+        build_dict = dict(build_node)
+
+        for k, v in build_dict.items():
+            if isinstance(v, DateTime):
+                build_dict[k] = v.iso_format()
+        parts_list = []
+
+        for item in parts_info:
+            part_node = item["part"]
+            if part_node is not None:
+                part_dict = dict(part_node)
+                part_dict["part_type"] = list(part_node.labels)[0]
+                parts_list.append({
+                    "part": part_dict,
+                    "quantity": item["quantity"]
+                })
+
+        build_dict["parts"] = parts_list
+        builds.append(build_dict)
+
+    return jsonify({"builds": builds}), 200
 
 @part_management.route('/get_build/<build_id>', methods=['GET'])
 def get_build_by_id(build_id):
@@ -280,3 +329,22 @@ def delete_build(build_id):
     driver.execute_query(delete_query, build_id=build_id)
 
     return jsonify({"message": "Build deleted successfully"}), 200
+
+@part_management.route("/remove_part_from_build/<part_id>", methods=['DELETE'])
+def remove_part_from_build(part_id):
+    driver = get_driver()
+
+    # copy for all routes that need authentication
+
+    token = request.headers.get('Authorization')
+    token = token.split(" ")[1]
+    decoded_token = decode_token(token)
+
+    if decoded_token in ["expired", "invalid"]:
+        return jsonify({"error": "Invalid or expired token"}), 401
+    
+    # copy for all routes that need authentication
+
+    driver.execute_query("MATCH (o:Build)-[r:CONTAINS]->(p {part_id: $part_id}) DETACH DELETE r", part_id=part_id)
+
+    return jsonify({"message": "Successfully removed part from build"}), 200
